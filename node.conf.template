@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Node-specific configuration — DIFFERS per node
+# Deploy one copy per node, editing NODE_PRIORITY and NODE_IP
+# =============================================================================
+
+# Priority determines VIP ownership (higher = preferred owner)
+# Primary node: 110, backups: 90 and 80 (or 90 and 90 for equal backup)
+NODE_PRIORITY=110
+
+# This node's own IP on the VRRP interface (used for VRRP multicast source)
+NODE_IP="192.168.1.10"
+
+# --- Optional: Nagios/Icinga integration ---
+# Set to "on" to enable HAProxy state-check for nagios plugins
+# HAProxy will write state to /var/lib/haproxy/state
+HAProxy_STATE_CHECK="on"

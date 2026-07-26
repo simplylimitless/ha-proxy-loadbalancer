@@ -1,0 +1,53 @@
+# =============================================================================
+# HA Load Balancer — Docker Compose for 3-node Proxmox cluster
+# Deploy one service per Raspberry Pi (or physical server)
+# =============================================================================
+# Usage:
+#   1. Edit the env vars below for your network
+#   2. Edit the backends list to match your Proxmox nodes
+#   3. docker compose up -d   (on each Pi)
+# =============================================================================
+
+services:
+  lb:
+    image: ha-lb:latest          # Build locally or use your registry
+    container_name: ha-lb-{{NODE_NAME}}   # Override per node below
+    network_mode: host            # REQUIRED: keepalived needs host network for VIP
+    privileged: true              # Needed for CAP_NET_ADMIN + VIP binding
+    restart: unless-stopped
+
+    # Environment variables — shared across ALL nodes (identical)
+    environment:
+      VIP_ADDRESS: 192.168.1.100  # The floating IP (DNS points here)
+      VIP_SUBNET: "24"
+      VRRP_INTERFACE: eth0       # Your LAN interface name
+      VRRP_VRID: "50"            # Must be unique on your network (0-255)
+      VRRP_AUTH_PASS: CHANGE_ME_PASSWORD
+      BACKENDS_LIST: >-
+        192.168.1.10:8006,
+        192.168.1.11:8006,
+        192.168.1.12:8006
+
+    volumes:
+      # Persistent socket dir for HAProxy admin
+      - lb-state:/run/haproxy
+
+    # Sysctl: allow VIP binding before routing is ready
+    sysctls:
+      - net.ipv4.ip_nonlocal_bind=1
+
+    # Health check (via docker exec)
+    healthcheck:
+      test: ["CMD", "pgrep", "haproxy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    # Node 1 — primary VIP owner (highest priority)
+    # Override container name and priority below
+    # deploy:
+    #   placement:
+    #     constraints: [node.hostname == pi-proxmox-1]
+
+volumes:
+  lb-state:

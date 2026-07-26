@@ -1,0 +1,14 @@
+# =============================================================================
+# Backend configuration file for HA Load Balancer
+# Mount to: /etc/haproxy-lb/backends.conf
+#
+# One backend per line: IP:PORT
+# Lines starting with # are comments (also strips inline comments)
+# This file takes precedence over BACKENDS_LIST environment variable
+# =============================================================================
+#
+# Proxmox VE nodes — health-checked on /api2/json
+#
+192.168.1.10:8006
+192.168.1.11:8006
+192.168.1.12:8006

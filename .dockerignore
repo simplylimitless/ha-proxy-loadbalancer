@@ -1,0 +1,8 @@
+.git
+.github
+*.md
+!Docker-README.md
+samples
+node.conf
+*.conf
+!backends.conf.sample
