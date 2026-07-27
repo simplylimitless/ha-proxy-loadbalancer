@@ -1,11 +1,11 @@
 # =============================================================================
-# HA Load Balancer — Docker Compose for 3-node Proxmox cluster
-# Deploy one service per Raspberry Pi (or physical server)
+# HA Load Balancer — Docker Compose for a 3-node cluster
+# Deploy one service per node (Raspberry Pi, VM, or physical server)
 # =============================================================================
 # Usage:
 #   1. Edit the env vars below for your network
-#   2. Edit the backends list to match your Proxmox nodes
-#   3. docker compose up -d   (on each Pi)
+#   2. Edit the backends list to match your service nodes
+#   3. docker compose up -d   (on each node)
 # =============================================================================
 
 services:
@@ -24,9 +24,9 @@ services:
       VRRP_VRID: "50"            # Must be unique on your network (0-255)
       VRRP_AUTH_PASS: CHANGE_ME_PASSWORD
       BACKENDS_LIST: >-
-        192.168.1.10:8006,
-        192.168.1.11:8006,
-        192.168.1.12:8006
+        192.168.1.10:80,
+        192.168.1.11:80,
+        192.168.1.12:80
 
     volumes:
       # Persistent socket dir for HAProxy admin
@@ -45,9 +45,6 @@ services:
 
     # Node 1 — primary VIP owner (highest priority)
     # Override container name and priority below
-    # deploy:
-    #   placement:
-    #     constraints: [node.hostname == pi-proxmox-1]
 
 volumes:
   lb-state:

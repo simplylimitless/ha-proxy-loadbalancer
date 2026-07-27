@@ -1,6 +1,6 @@
-# HA Load Balancer for Proxmox Cluster
+# HA Load Balancer
 
-A floating VIP + load-balanced proxy for high-availability access to a Proxmox cluster's web interface.
+A floating VIP + load-balanced proxy for high-availability access to any service running on multiple nodes.
 
 ## Quick Start
 
@@ -20,19 +20,19 @@ Edit `docker-compose.yml` with your network settings, then run on each node:
 # Node 1 — primary VIP owner (priority 110)
 VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
 NODE_PRIORITY=110 NODE_IP=192.168.1.10 \
-BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+BACKENDS_LIST="192.168.1.10:80,192.168.1.11:80,192.168.1.12:80" \
 VRRP_AUTH_PASS=my-secret docker compose up -d
 
 # Node 2 — backup (priority 90)
 VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
 NODE_PRIORITY=90 NODE_IP=192.168.1.11 \
-BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+BACKENDS_LIST="192.168.1.10:80,192.168.1.11:80,192.168.1.12:80" \
 VRRP_AUTH_PASS=my-secret docker compose up -d
 
 # Node 3 — backup (priority 90)
 VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
 NODE_PRIORITY=90 NODE_IP=192.168.1.12 \
-BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+BACKENDS_LIST="192.168.1.10:80,192.168.1.11:80,192.168.1.12:80" \
 VRRP_AUTH_PASS=my-secret docker compose up -d
 ```
 
@@ -49,7 +49,7 @@ docker run -d \
   -e VRRP_VRID=50 \
   -e NODE_PRIORITY=110 \
   -e NODE_IP=192.168.1.10 \
-  -e BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+  -e BACKENDS_LIST="192.168.1.10:80,192.168.1.11:80,192.168.1.12:80" \
   -e VRRP_AUTH_PASS=my-secret \
   -e HC_INTERVAL=2000 \
   ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
@@ -58,7 +58,7 @@ docker run -d \
 ## Architecture
 
 ```
-                   DNS: proxmox.example.com
+                   DNS: example.com
                           ↓
                     Floating VIP (192.168.1.100)
                           ↓
@@ -69,9 +69,9 @@ docker run -d \
               │  health check  → VIP failover  │
               └──────────────────────────────┘
                           ↓
-              Proxmox Node 1 (:8006)  ◄── healthy
-              Proxmox Node 2 (:8006)  ◄── healthy
-              Proxmox Node 3 (:8006)  ◄── healthy
+              Backend 1 (:80)  ◄── healthy
+              Backend 2 (:80)  ◄── healthy
+              Backend 3 (:80)  ◄── healthy
 ```
 
 ### Two layers of failover
@@ -79,7 +79,7 @@ docker run -d \
 | Layer | Technology | What it protects against |
 |-------|-----------|-------------------------|
 | **Node failure** | Keepalived (VRRP) | VIP floats to another node if the owner dies |
-| **Backend failure** | HAProxy health checks | Traffic routed around a dead Proxmox node |
+| **Backend failure** | HAProxy health checks | Traffic routed around a dead backend |
 | **Proxy failure** | `chk_haproxy` script | HAProxy crash triggers VIP failover via keepalived |
 
 ## Prerequisites
@@ -87,7 +87,7 @@ docker run -d \
 - Docker installed on each node (Raspberry Pi OS, Debian, Ubuntu, etc.)
 - ARM64 (aarch64) or amd64
 - One unused IP address on your LAN for the VIP (or reuse an existing one)
-- All 3 Proxmox nodes on the same subnet/LAN
+- All 3 backend nodes on the same subnet/LAN
 - `network_mode: host` — required so keepalived can bind the VIP to the host's network interface
 - `privileged` — needed for keepalived VIP binding
 
@@ -103,11 +103,10 @@ docker run -d \
 
 ### HAProxy Health Checks
 
-- HAProxy sends `GET /api2/json` to each Proxmox node every 2 seconds
-- Expected responses: `200` (public API) or `401` (authenticated API) — both mean "alive"
+- HAProxy sends an HTTP health check to each backend every 2 seconds (configurable interval via `HC_INTERVAL`)
 - A backend is marked down after 3 consecutive failures (`fall 3`)
 - A backend recovers after 2 consecutive successes (`rise 2`)
-- SSL verification is disabled for self-signed Proxmox certs
+- SSL verification is disabled for self-signed certs
 
 ### HAProxy → Keepalived Integration
 
@@ -139,13 +138,13 @@ When HAProxy crashes:
 | Mount Path | Purpose | Example |
 |------------|---------|---------|
 | `/etc/haproxy-lb/backends.conf` | Backend server list (file overrides `BACKENDS_LIST` env var) | See `samples/backends.conf.sample` |
-| `/etc/haproxy/certs/proxmox.pem` | TLS certificate (auto-generated if missing) | Custom cert for production |
+| `/etc/haproxy/certs/backend.pem` | TLS certificate (auto-generated if missing) | Mount your own as `./certs/backend.pem` |
 
 ### Ports
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| `8006` | HTTPS | Proxmox VIP frontend (TLS terminated) |
+| `8006` | HTTPS | VIP frontend (TLS terminated) |
 | `8007` | HTTP | HTTP → HTTPS redirect |
 | `8404` | HTTP | HAProxy stats page |
 
@@ -161,9 +160,9 @@ volumes:
 Create `backends.conf`:
 
 ```
-192.168.1.10:8006
-192.168.1.11:8006
-192.168.1.12:8006
+192.168.1.10:80
+192.168.1.11:80
+192.168.1.12:80
 ```
 
 The mounted file takes precedence over the env var.
@@ -178,10 +177,10 @@ docker exec ha-lb ip addr show eth0 | grep "inet 192.168.1.100"
 docker logs ha-lb
 
 # Check HAProxy stats (on any node, port 8404):
-curl -s http://192.168.1.10:8404/haproxy?stats | grep proxmox
+curl -s http://192.168.1.10:8404/haproxy?stats
 
 # Test the floating VIP:
-curl -k https://192.168.1.100:8006/api2/json
+curl -k https://192.168.1.100:8006
 
 # Check all container status:
 docker ps --filter "name=ha-lb"
@@ -246,7 +245,7 @@ docker image inspect ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest | grep
 
 ```bash
 # Test connectivity from the VIP-owner node:
-docker exec ha-lb curl -kv https://192.168.1.10:8006/api2/json
+docker exec ha-lb curl -kv https://192.168.1.10:80/
 
 # Check HAProxy logs:
 docker logs ha-lb | grep -i backend
@@ -300,7 +299,7 @@ docker load < ha-lb-arm64.tar.gz
 4. **Replace the self-signed cert** — mount your own:
    ```yaml
    volumes:
-     - ./certs/proxmox.pem:/etc/haproxy/certs/proxmox.pem:ro
+     - ./certs/backend.pem:/etc/haproxy/certs/backend.pem:ro
    ```
 
 ## Cleanup

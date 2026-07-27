@@ -56,46 +56,44 @@ listen stats
 
 #---------------------------------------------------------------------
 # Frontend: accept HTTPS traffic for the floating VIP
-# Proxmox uses self-signed certs, so we terminate TLS here
-# and forward plain HTTP to backends (they're on the same LAN)
+# TLS terminates here, traffic is forwarded to backends over HTTP
 #---------------------------------------------------------------------
-frontend proxmox_https
+frontend backend_https
     # Listen on all interfaces (the VIP is assigned locally by keepalived)
-    bind *:8006 ssl crt /etc/haproxy/certs/proxmox.pem
+    bind *:8006 ssl crt /etc/haproxy/certs/backend.pem
 
     # Default to HTTPS redirect for non-HTTPS clients
     http-request redirect scheme https unless { ssl_fc }
 
     # Use the first healthy backend
-    default_backend proxmox_nodes
+    default_backend backend_nodes
 
 #---------------------------------------------------------------------
 # Frontend: also accept plain HTTP (redirect to HTTPS)
 #---------------------------------------------------------------------
-frontend proxmox_http
+frontend backend_http
     bind *:8007
     http-request redirect scheme https code 301
 
 #---------------------------------------------------------------------
-# Backend: Proxmox VE nodes
+# Backend: backend servers
 # - roundrobin distributes across healthy nodes
-# - inter/down-timeout handle health check timing
-# - Proxmox API calls are stateless enough for round-robin
-# - Console sessions benefit from stickiness (source IP cookie)
+# - Health checks verify each backend is reachable
+# - Customize the health check path for your service
 #---------------------------------------------------------------------
-backend proxmox_nodes
+backend backend_nodes
     balance roundrobin
 
-    # Stickiness for console sessions (optional — uncomment if needed)
+    # Stickiness for session-based services (optional — uncomment if needed)
     # cookie SERVERID insert indirect nocache
 
-    # Health check: GET /api2/json (Proxmox API root)
-    # Returns 200 if node is alive, 401 if alive but needs auth
-    # Both are "healthy" responses
-    option httpchk GET /api2/json
-    http-check expect status 200,401,403
+    # Health check — customize for your service
+    # Example: GET /health, expect 200
+    # Example: GET /api, expect 200 or 401
+    option httpchk GET /
+    http-check expect status 200,401
 
-    # Disable SSL verification for self-signed Proxmox certs
+    # Disable SSL verification for self-signed certs
     # 'none' means HAProxy does not verify the backend cert
     default-server ssl verify none ca-file none
 
@@ -106,12 +104,12 @@ backend proxmox_nodes
 ${BACKENDS_DIRECTIVE}
 
 #---------------------------------------------------------------------
-# If stickiness is preferred for console sessions, use this
+# If stickiness is preferred for session-based services, use this
 # cookie-based stickiness backend instead of roundrobin above
 #---------------------------------------------------------------------
-# backend proxmox_nodes_sticky
+# backend backend_nodes_sticky
 #     balance roundrobin
-#     cookie PROXMOX_NODE insert indirect nocache
+#     cookie SERVERID insert indirect nocache
 #     default-server ssl verify none ca-file none
 #     inter ${HC_INTERVAL} rise 2 fall 3
 # ${BACKENDS_DIRECTIVE_STICKY}

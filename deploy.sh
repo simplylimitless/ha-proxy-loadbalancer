@@ -76,16 +76,16 @@ sed -e "s/\${HC_INTERVAL}/${HC_INTERVAL}/g" \
 
 chmod 644 /etc/haproxy/haproxy.cfg
 
-# --- Self-signed cert for HAProxy (if Proxmox nodes use self-signed) ---
-if [[ ! -f /etc/haproxy/certs/proxmox.pem ]]; then
+# --- Self-signed cert for HAProxy (if backends use self-signed) ---
+if [[ ! -f /etc/haproxy/certs/backend.pem ]]; then
     echo "  Creating self-signed cert bundle for HAProxy frontend ..."
     # Generate a cert that covers the VIP
     openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
         -keyout /tmp/haproxy-key.pem -out /tmp/haproxy-cert.pem \
         -days 365 -subj "/CN=${VIP_ADDRESS}" 2>/dev/null
-    cat /tmp/haproxy-cert.pem /tmp/haproxy-key.pem > /etc/haproxy/certs/proxmox.pem
+    cat /tmp/haproxy-cert.pem /tmp/haproxy-key.pem > /etc/haproxy/certs/backend.pem
     rm -f /tmp/haproxy-key.pem /tmp/haproxy-cert.pem
-    chmod 600 /etc/haproxy/certs/proxmox.pem
+    chmod 600 /etc/haproxy/certs/backend.pem
 fi
 
 # --- Install health check script ---

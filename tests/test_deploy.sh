@@ -158,7 +158,7 @@ TEMPLATE="/tmp/haproxy-lb-test_haproxy_template"
 OUTPUT="/tmp/haproxy-lb-test_haproxy_output"
 
 cat > "$TEMPLATE" <<'TPL'
-backend proxmox_nodes
+backend backend_nodes
     balance roundrobin
     option httpchk GET /api2/json
     http-check expect status 200,401,403
@@ -270,7 +270,7 @@ rm -rf "$CERTGEN_DIR"
 mkdir -p "$CERTGEN_DIR/certs"
 
 VIP_ADDRESS="10.0.0.1"
-CERT_BUNDLE="$CERTGEN_DIR/certs/proxmox.pem"
+CERT_BUNDLE="$CERTGEN_DIR/certs/backend.pem"
 
 openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
     -keyout "$CERTGEN_DIR/key.pem" -out "$CERTGEN_DIR/cert.pem" \

@@ -97,7 +97,7 @@ fi
 echo "Configured with ${COUNT} backend(s): ${BACKENDS_LIST}"
 
 # --- Generate self-signed certificate for HAProxy frontend ---
-CERT_FILE="/etc/haproxy/certs/proxmox.pem"
+CERT_FILE="/etc/haproxy/certs/backend.pem"
 if [ ! -f "$CERT_FILE" ]; then
     echo "Generating self-signed certificate for HAProxy frontend..."
     openssl req -x509 -nodes -newkey rsa:2048 \
@@ -193,18 +193,18 @@ listen stats
     stats refresh 10s
     stats admin if LOCALHOST
 
-frontend proxmox_https
-    bind *:8006 ssl crt /etc/haproxy/certs/proxmox.pem
-    default_backend proxmox_nodes
+frontend backend_https
+    bind *:8006 ssl crt /etc/haproxy/certs/backend.pem
+    default_backend backend_nodes
 
-frontend proxmox_http
+frontend backend_http
     bind *:8007
     http-request redirect scheme https code 301
 
-backend proxmox_nodes
+backend backend_nodes
     balance roundrobin
-    option httpchk GET /api2/json
-    http-check expect status 200,401,403
+    option httpchk GET /
+    http-check expect status 200,401
     default-server ssl verify none ca-file none
     inter ${HC_INTERVAL} rise 2 fall 3
 

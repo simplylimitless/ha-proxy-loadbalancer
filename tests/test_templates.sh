@@ -19,13 +19,13 @@ CONTENT=$(cat "$TEMPLATE")
 
 assert_contains "$CONTENT" "global" "global section"
 assert_contains "$CONTENT" "defaults" "defaults section"
-assert_contains "$CONTENT" "frontend proxmox_https" "HTTPS frontend"
-assert_contains "$CONTENT" "frontend proxmox_http" "HTTP frontend"
-assert_contains "$CONTENT" "backend proxmox_nodes" "backend section"
+assert_contains "$CONTENT" "frontend backend_https" "HTTPS frontend"
+assert_contains "$CONTENT" "frontend backend_http" "HTTP frontend"
+assert_contains "$CONTENT" "backend backend_nodes" "backend section"
 assert_contains "$CONTENT" "listen stats" "stats listener"
 assert_contains "$CONTENT" "stats uri" "stats URI"
 assert_contains "$CONTENT" "option httpchk" "HTTP health check option"
-assert_contains "$CONTENT" "/api2/json" "API health check path"
+assert_contains "$CONTENT" "option httpchk GET /" "HTTP health check path"
 }
 
 # --- Test: keepalived.conf.template has required sections ---
@@ -100,7 +100,7 @@ assert_contains "$KAL_CONTENT" "/usr/local/bin/ha-check-haproxy.sh" "check scrip
 # HAProxy template references the cert
 HAP="$PROJECT_ROOT/haproxy.cfg.template"
 HAP_CONTENT=$(cat "$HAP")
-assert_contains "$HAP_CONTENT" "/etc/haproxy/certs/proxmox.pem" "cert path in haproxy"
+assert_contains "$HAP_CONTENT" "/etc/haproxy/certs/backend.pem" "cert path in haproxy"
 }
 
 # --- Test: docker-compose.yml has required keys ---

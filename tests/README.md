@@ -36,7 +36,7 @@ bash tests/test_entrypoint.sh
 |-----------|--------------|
 | `test_entrypoint.sh` | BACKENDS_LIST parsing, BACKENDS_FILE priority, ROUTER_ID derivation, INITIAL_STATE logic, keepalived.conf/haproxy.cfg generation, certificate generation, default values, whitespace sanitization |
 | `test_deploy.sh` | config.sh/node.conf requirements, backend directive building, keepalived variable substitution, haproxy variable substitution, status messages, directory creation, file permissions, cert generation |
-| `test_config.sh` | Default variable values, BACKENDS array structure, IP:PORT format validation, PROXMOX_USER default, SMTP comment status, multicast source |
+| `test_config.sh` | Default variable values, BACKENDS array structure, IP:PORT format validation, BACKEND_USER default, SMTP comment status, multicast source |
 | `test_ha_check.sh` | pgrep logic, socket check, ss fallback, full script behavior, file permissions, shebang, strict mode, syslog logging |
 | `test_install_deps.sh` | Package list, sysctl parameters, HAProxy enable, keepalived directory, apt-get update, heredoc format |
 | `test_templates.sh` | haproxy.cfg sections, keepalived.conf sections, variable markers, file paths, docker-compose keys, backends.conf format, node.conf variables, Dockerfile structure |

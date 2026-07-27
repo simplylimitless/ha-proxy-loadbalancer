@@ -1,5 +1,5 @@
 # =============================================================================
-# HA Load Balancer — Docker image for Raspberry Pi (ARM64)
+# HA Load Balancer — Docker image (ARM64 + amd64)
 # Runs keepalived (VRRP floating VIP) + HAProxy (load balancer) in one container
 # =============================================================================
 FROM alpine:3.20

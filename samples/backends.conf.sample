@@ -7,8 +7,8 @@
 # This file takes precedence over BACKENDS_LIST environment variable
 # =============================================================================
 #
-# Proxmox VE nodes — health-checked on /api2/json
+# Example service nodes — update IPs and ports for your service
 #
-192.168.1.10:8006
-192.168.1.11:8006
-192.168.1.12:8006
+192.168.1.10:80
+192.168.1.11:80
+192.168.1.12:80

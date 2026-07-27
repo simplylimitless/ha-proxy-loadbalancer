@@ -33,9 +33,9 @@ CONFIG="$PROJECT_ROOT/config.sh"
 source "$CONFIG"
 
 assert_eq "3" "${#BACKENDS[@]}" "three backends defined"
-assert_contains "${BACKENDS[0]}" ":8006" "backend 0 has port 8006"
-assert_contains "${BACKENDS[1]}" ":8006" "backend 1 has port 8006"
-assert_contains "${BACKENDS[2]}" ":8006" "backend 2 has port 8006"
+assert_contains "${BACKENDS[0]}" ":80" "backend 0 has port 80"
+assert_contains "${BACKENDS[1]}" ":80" "backend 1 has port 80"
+assert_contains "${BACKENDS[2]}" ":80" "backend 2 has port 80"
 }
 
 # --- Test: BACKENDS entries have valid IP:PORT format ---
@@ -57,12 +57,12 @@ for i in "${!BACKENDS[@]}"; do
 done
 }
 
-# --- Test: PROXMOX_USER defaults to _proxy ---
-echo -e "  ${BLUE}TEST:${NC} PROXMOX_USER defaults to _proxy"
+# --- Test: BACKEND_USER defaults to empty ---
+echo -e "  ${BLUE}TEST:${NC} BACKEND_USER defaults to empty"
 {
 CONFIG="$PROJECT_ROOT/config.sh"
 source "$CONFIG"
-assert_eq "_proxy" "$PROXMOX_USER" "PROXMOX_USER default"
+assert_eq "" "$BACKEND_USER" "BACKEND_USER default"
 }
 
 # --- Test: SMTP settings are commented out by default ---
