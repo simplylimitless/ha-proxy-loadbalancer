@@ -6,13 +6,11 @@
 #   1. Edit the env vars below for your network
 #   2. Edit the backends list to match your Proxmox nodes
 #   3. docker compose up -d   (on each Pi)
-# NOTE: image defaults to ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
-#       Override with your own image:  image: ha-lb:latest
 # =============================================================================
 
 services:
   lb:
-    image: ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
+    image: ha-lb:latest          # Build locally or use your registry
     container_name: ha-lb-{{NODE_NAME}}   # Override per node below
     network_mode: host            # REQUIRED: keepalived needs host network for VIP
     privileged: true              # Needed for CAP_NET_ADMIN + VIP binding

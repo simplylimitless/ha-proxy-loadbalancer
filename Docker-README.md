@@ -31,14 +31,7 @@ Keepalived must bind the VIP to the host's network interface. Docker's default b
 - One unused IP address on your LAN for the VIP (or reuse an existing one)
 - All 3 Proxmox nodes on the same subnet/LAN
 
-## Pull the Image
-
-```bash
-# Pull the pre-built multi-arch image (ARM64 or amd64)
-docker pull ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
-```
-
-**or build locally:**
+## Build the Image
 
 ```bash
 # Build for your current architecture (ARM64 on Raspberry Pi)
@@ -46,6 +39,12 @@ docker build -t ha-lb:latest .
 
 # If cross-compiling from x86_64 to ARM64:
 docker buildx build --platform linux/arm64 -t ha-lb:latest .
+```
+
+**Or pull the pre-built multi-arch image:**
+
+```bash
+docker pull ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
 ```
 
 ## Option 1: Docker Compose (Recommended)
@@ -67,12 +66,6 @@ environment:
 ```
 
 ### Step 2: Deploy to each Pi
-
-Pull the image first (one-time):
-
-```bash
-docker pull ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
-```
 
 On each Raspberry Pi, create a node-specific compose file:
 
