@@ -6,3 +6,5 @@ samples
 node.conf
 *.conf
 !backends.conf.sample
+!haproxy-sni.cfg
+!generate-sni-certs.sh

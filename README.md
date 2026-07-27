@@ -167,6 +167,83 @@ Create `backends.conf`:
 
 The mounted file takes precedence over the env var.
 
+## Multiple Vhosts (SNI)
+
+When you need to load-balance multiple services (e.g. Proxmox + GitLab + Jenkins) through a single VIP, use **SNI (Server Name Indication)** — HAProxy routes based on the domain name in the TLS handshake.
+
+### Setup
+
+```bash
+# 1. Generate or mount certificates
+mkdir -p /etc/haproxy/certs
+
+# Self-signed example:
+./samples/generate-sni-certs.sh /etc/haproxy/certs
+
+# Or copy your real certs:
+#   cp proxmox.pem git.pem jenkins.pem /etc/haproxy/certs/
+```
+
+```bash
+# 2. Run with BACKENDS_LIST pointing to your first service
+docker run -d \
+  --name ha-lb \
+  --network host \
+  --privileged \
+  --restart unless-stopped \
+  -e VIP_ADDRESS=10.168.5.200 \
+  -e VRRP_INTERFACE=eth0 \
+  -e VRRP_VRID=50 \
+  -e NODE_PRIORITY=110 \
+  -e NODE_IP=10.168.5.97 \
+  -e BACKENDS_LIST="10.168.5.97:8006,10.168.5.54:8006,10.168.5.42:8006" \
+  -e VRRP_AUTH_PASS=my-secret \
+  -v ./certs:/etc/haproxy/certs \
+  ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
+```
+
+### Custom SNI config
+
+For complex multi-vhost setups, mount a custom HAProxy config:
+
+```bash
+docker run -d \
+  --name ha-lb \
+  --network host \
+  --privileged \
+  --restart unless-stopped \
+  -e VRRP_INTERFACE=eth0 \
+  -e VRRP_VRID=50 \
+  -e NODE_PRIORITY=110 \
+  -e NODE_IP=10.168.5.97 \
+  -e VRRP_AUTH_PASS=my-secret \
+  -v ./haproxy-sni.cfg:/etc/haproxy/haproxy.cfg:ro \
+  -v ./certs:/etc/haproxy/certs \
+  ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
+```
+
+See `samples/haproxy-sni.cfg` for a complete multi-vhost example with Proxmox, GitLab, and Jenkins backends.
+
+### How SNI works in HAProxy
+
+```
+Client requests https://git.example.com
+           ↓
+    HAProxy reads SNI header
+           ↓
+    Finds certs/git.example.com.pem
+           ↓
+    Serves that cert + routes to git_nodes backend
+```
+
+Each `.pem` file in `/etc/haproxy/certs/` is matched by domain name:
+
+| Cert File | HAProxy Serves When |
+|-----------|-------------------|
+| `certs/proxmox.example.com.pem` | `https://proxmox.example.com` |
+| `certs/git.example.com.pem` | `https://git.example.com` |
+| `certs/default.pem` | Any unknown domain (fallback) |
+
 ## Verify It Works
 
 ```bash
@@ -325,6 +402,8 @@ keepalived.conf.template   # Keepalived VRRP config template
 haproxy.cfg.template       # HAProxy load balancer config template
 samples/
   backends.conf.sample     # Backend server list template
+  haproxy-sni.cfg          # Multi-vhost SNI configuration example
+  generate-sni-certs.sh    # Generate self-signed SNI certs for testing
 ```
 
 ## License
