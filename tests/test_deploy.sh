@@ -233,9 +233,9 @@ rm -rf "$DEPLOY_MKDIR"
 mkdir -p "$DEPLOY_MKDIR/etc/keepalived"
 mkdir -p "$DEPLOY_MKDIR/etc/haproxy/certs"
 mkdir -p "$DEPLOY_MKDIR/usr/local/bin"
-assert_file_exists "$DEPLOY_MKDIR/etc/keepalived" "keepalived dir"
-assert_file_exists "$DEPLOY_MKDIR/etc/haproxy/certs" "haproxy certs dir"
-assert_file_exists "$DEPLOY_MKDIR/usr/local/bin" "bin dir"
+assert_true "[[ -d \"$DEPLOY_MKDIR/etc/keepalived\" ]]" "keepalived dir"
+assert_true "[[ -d \"$DEPLOY_MKDIR/etc/haproxy/certs\" ]]" "haproxy certs dir"
+assert_true "[[ -d \"$DEPLOY_MKDIR/usr/local/bin\" ]]" "bin dir"
 rm -rf /tmp/haproxy-lb-test_deploy_mkdir
 
 # --- Test: deploy.sh sets correct file permissions ---
