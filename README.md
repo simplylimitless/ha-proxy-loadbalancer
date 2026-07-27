@@ -2,35 +2,58 @@
 
 A floating VIP + load-balanced proxy for high-availability access to a Proxmox cluster's web interface.
 
-> **Running on Raspberry Pi?** See [Docker-README.md](Docker-README.md) for containerized deployment.
-
 ## Quick Start
 
-### Docker (Raspberry Pi)
+```bash
+# Pull the pre-built multi-arch image
+docker pull ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
+
+# Or build locally:
+docker build -t ha-lb:latest .
+```
+
+### Docker Compose (Recommended)
+
+Edit `docker-compose.yml` with your network settings, then run on each node:
 
 ```bash
-docker build -t ha-lb:latest .
-docker run -d --network host --privileged \
+# Node 1 — primary VIP owner (priority 110)
+VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
+NODE_PRIORITY=110 NODE_IP=192.168.1.10 \
+BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+VRRP_AUTH_PASS=my-secret docker compose up -d
+
+# Node 2 — backup (priority 90)
+VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
+NODE_PRIORITY=90 NODE_IP=192.168.1.11 \
+BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+VRRP_AUTH_PASS=my-secret docker compose up -d
+
+# Node 3 — backup (priority 90)
+VIP_ADDRESS=192.168.1.100 VRRP_INTERFACE=eth0 VRRP_VRID=50 \
+NODE_PRIORITY=90 NODE_IP=192.168.1.12 \
+BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
+VRRP_AUTH_PASS=my-secret docker compose up -d
+```
+
+### Docker Run (single command)
+
+```bash
+docker run -d \
+  --name ha-lb \
+  --network host \
+  --privileged \
+  --restart unless-stopped \
   -e VIP_ADDRESS=192.168.1.100 \
   -e VRRP_INTERFACE=eth0 \
   -e VRRP_VRID=50 \
   -e NODE_PRIORITY=110 \
+  -e NODE_IP=192.168.1.10 \
   -e BACKENDS_LIST="192.168.1.10:8006,192.168.1.11:8006,192.168.1.12:8006" \
-  ha-lb:latest
+  -e VRRP_AUTH_PASS=my-secret \
+  -e HC_INTERVAL=2000 \
+  ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
 ```
-
-[Full Docker docs →](Docker-README.md)
-
-### Bare metal (apt)
-
-```bash
-sudo apt install keepalived haproxy socat openssl
-# Copy configs, then:
-sudo bash deploy.sh
-sudo systemctl enable --now keepalived haproxy
-```
-
-[Full bare-metal docs →](DEPLOY-CHECKLIST.md)
 
 ## Architecture
 
@@ -39,16 +62,19 @@ sudo systemctl enable --now keepalived haproxy
                           ↓
                     Floating VIP (192.168.1.100)
                           ↓
-            Only the VIP-owner node runs HAProxy
-                          ↓
-            HAProxy health-checks all 3 Proxmox nodes
+              Container on VIP-owner node
+              ┌──────────────────────────────┐
+              │  keepalived  → VRRP heartbeat │
+              │  haproxy     → load balance   │
+              │  health check  → VIP failover  │
+              └──────────────────────────────┘
                           ↓
               Proxmox Node 1 (:8006)  ◄── healthy
               Proxmox Node 2 (:8006)  ◄── healthy
               Proxmox Node 3 (:8006)  ◄── healthy
 ```
 
-### Two layers of failover:
+### Two layers of failover
 
 | Layer | Technology | What it protects against |
 |-------|-----------|-------------------------|
@@ -56,115 +82,21 @@ sudo systemctl enable --now keepalived haproxy
 | **Backend failure** | HAProxy health checks | Traffic routed around a dead Proxmox node |
 | **Proxy failure** | `chk_haproxy` script | HAProxy crash triggers VIP failover via keepalived |
 
-## Files
+## Prerequisites
 
-```
-Dockerfile                 # Docker image (Alpine, ARM64 + amd64)
-docker-compose.yml         # 3-node cluster example
-entrypoint.sh              # Config generation + service startup (Docker)
-Docker-README.md           # Docker deployment docs
-config.sh                  # Bare-metal shared config — identical on all nodes
-node.conf.template         # Bare-metal node-specific config
-keepalived.conf.template   # Keepalived VRRP config template
-haproxy.cfg.template       # HAProxy load balancer config template
-ha-check-haproxy.sh        # Keepalived health check script
-deploy.sh                  # Merges templates + configs → /etc/
-install-dependencies.sh    # Installs packages, kernel params
-DEPLOY-CHECKLIST.md        # Bare-metal deployment checklist
-samples/
-  backends.conf.sample     # Backend server list template
-```
-
-## Quick Start
-
-### 1. Install dependencies on ALL three nodes
-
-```bash
-# Copy install-dependencies.sh to each node, then:
-sudo bash install-dependencies.sh
-```
-
-### 2. Configure shared settings
-
-Edit `config.sh` — set your network, VIP, and backend IPs:
-
-```bash
-# Edit on your workstation, then copy to ALL nodes:
-scp config.sh node1:/etc/haproxy-lb/
-scp config.sh node2:/etc/haproxy-lb/
-scp config.sh node3:/etc/haproxy-lb/
-```
-
-Key fields:
-- `VIP_ADDRESS` — the floating IP (clients/DNS point here)
-- `VRRP_INTERFACE` — the LAN interface on each node (e.g., `eth0`, `eno1`)
-- `BACKENDS` — list all 3 Proxmox node IPs:ports
-- `VRRP_VRID` — must be unique on your network (0–255)
-
-### 3. Configure per-node settings
-
-Copy `node.conf.template` to each node as `/etc/haproxy-lb/node.conf` and edit:
-
-```bash
-# Node 1 (primary owner):
-NODE_PRIORITY=110
-NODE_IP=192.168.1.10
-
-# Node 2 (backup):
-NODE_PRIORITY=90
-NODE_IP=192.168.1.11
-
-# Node 3 (backup):
-NODE_PRIORITY=90
-NODE_IP=192.168.1.12
-```
-
-```bash
-scp node.conf.node1 node1:/etc/haproxy-lb/node.conf
-scp node.conf.node2 node2:/etc/haproxy-lb/node.conf
-scp node.conf.node3 node3:/etc/haproxy-lb/node.conf
-```
-
-### 4. Deploy configs on each node
-
-```bash
-# On EACH node:
-sudo cp config.sh /etc/haproxy-lb/
-sudo bash /etc/haproxy-lb/deploy.sh
-```
-
-### 5. Start services
-
-```bash
-# On EACH node:
-sudo systemctl enable --now keepalived haproxy
-```
-
-### 6. Verify
-
-```bash
-# Check which node holds the VIP (should be priority=110 node):
-ip addr show eth0 | grep "inet 192.168.1.100"
-
-# Check keepalived logs:
-sudo journalctl -u keepalived -f
-
-# Check HAProxy logs:
-sudo journalctl -u haproxy -f
-
-# Test the floating IP:
-curl -k https://192.168.1.100:8006/api2/json
-
-# Check HAProxy stats:
-# Open http://<any-node-ip>:8404/haproxy?stats
-```
+- Docker installed on each node (Raspberry Pi OS, Debian, Ubuntu, etc.)
+- ARM64 (aarch64) or amd64
+- One unused IP address on your LAN for the VIP (or reuse an existing one)
+- All 3 Proxmox nodes on the same subnet/LAN
+- `network_mode: host` — required so keepalived can bind the VIP to the host's network interface
+- `privileged` — needed for keepalived VIP binding
 
 ## How It Works
 
 ### Keepalived VRRP
 
 - All 3 nodes run keepalived and advertise VRRP heartbeat every second
-- The node with highest `priority` wins and owns the VIP
+- The node with highest `NODE_PRIORITY` wins and owns the VIP
 - If the owner stops advertising (crash, network partition), backups take over
 - The `chk_haproxy` script lowers priority by 20 if HAProxy is dead
 - Preempt mode (default): higher-priority node reclaims VIP when it recovers
@@ -180,121 +112,221 @@ curl -k https://192.168.1.100:8006/api2/json
 ### HAProxy → Keepalived Integration
 
 When HAProxy crashes:
+
 1. `chk_haproxy.sh` detects the failure (process not running, socket unresponsive)
 2. Keepalived lowers the node's VRRP priority by 20
-3. A backup node (priority 90 → now effectively 90 vs 90) takes the VIP
+3. A backup node (priority 90) takes the VIP
 4. Services restart — normal operations resume on the new VIP owner
 
 ## Configuration Reference
 
-### config.sh
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIP_ADDRESS` | `192.168.1.100` | Floating IP for clients |
-| `VIP_SUBNET` | `24` | CIDR mask |
-| `VRRP_INTERFACE` | `eth0` | LAN interface name |
-| `VRRP_VRID` | `50` | VRRP router ID (unique per group) |
-| `BACKENDS` | — | Array of `IP:PORT` for Proxmox nodes |
-| `HC_INTERVAL` | `2000` | HAProxy health check interval (ms) |
-| `HC_TIMEOUT` | `5000` | HAProxy health check timeout (ms) |
+| `VIP_ADDRESS` | `192.168.1.100` | The floating VIP (DNS points here) |
+| `VIP_SUBNET` | `24` | CIDR subnet mask for the VIP |
+| `VRRP_INTERFACE` | `eth0` | LAN interface name (find with: `ip -br addr`) |
+| `VRRP_VRID` | `50` | VRRP router ID (unique per group on your network, 0–255) |
+| `VRRP_AUTH_PASS` | `CHANGE_ME_PASSWORD` | VRRP authentication password |
+| `NODE_PRIORITY` | `110` | VRRP priority (higher wins; primary=110, backups=90) |
+| `NODE_IP` | *(auto-detected)* | This node's IP on the VRRP interface |
+| `BACKENDS_LIST` | — | Comma-separated backends: `ip:port,ip:port,ip:port` |
+| `HC_INTERVAL` | `2000` | HAProxy health check interval in milliseconds |
 
-### node.conf
+### Mounted Files
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NODE_PRIORITY` | `110` | VRRP priority (1–254; higher wins) |
-| `NODE_IP` | — | This node's IP on VRRP interface |
+| Mount Path | Purpose | Example |
+|------------|---------|---------|
+| `/etc/haproxy-lb/backends.conf` | Backend server list (file overrides `BACKENDS_LIST` env var) | See `samples/backends.conf.sample` |
+| `/etc/haproxy/certs/proxmox.pem` | TLS certificate (auto-generated if missing) | Custom cert for production |
+
+### Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| `8006` | HTTPS | Proxmox VIP frontend (TLS terminated) |
+| `8007` | HTTP | HTTP → HTTPS redirect |
+| `8404` | HTTP | HAProxy stats page |
+
+### Backends File (Alternative to Env Var)
+
+Instead of `BACKENDS_LIST`, mount a config file in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./backends.conf:/etc/haproxy-lb/backends.conf:ro
+```
+
+Create `backends.conf`:
+
+```
+192.168.1.10:8006
+192.168.1.11:8006
+192.168.1.12:8006
+```
+
+The mounted file takes precedence over the env var.
+
+## Verify It Works
+
+```bash
+# Check which node holds the VIP (should be priority=110 node):
+docker exec ha-lb ip addr show eth0 | grep "inet 192.168.1.100"
+
+# Check container logs:
+docker logs ha-lb
+
+# Check HAProxy stats (on any node, port 8404):
+curl -s http://192.168.1.10:8404/haproxy?stats | grep proxmox
+
+# Test the floating VIP:
+curl -k https://192.168.1.100:8006/api2/json
+
+# Check all container status:
+docker ps --filter "name=ha-lb"
+```
+
+## Failover Testing
+
+```bash
+# Stop the container on the VIP owner — VIP should float to backup
+docker stop ha-lb
+# Wait ~4 seconds, then verify VIP moved:
+docker exec ha-lb-backup ip addr show eth0 | grep "inet 192.168.1.100"
+
+# Restore the original:
+docker start ha-lb
+# VIP should return (preempt mode with priority 110)
+```
 
 ## Troubleshooting
 
 ### VIP not appearing
 
 ```bash
-# Check keepalived status
-sudo systemctl status keepalived
+# Check container logs for errors:
+docker logs ha-lb --tail 50
 
-# Check for config errors
-sudo keepalived -t -f /etc/keepalived/keepalived.conf
-
-# Check kernel param (must be enabled):
-sysctl net.ipv4.ip_nonlocal_bind
+# Verify the sysctl is set (needed for VIP binding):
+docker exec ha-lb sysctl net.ipv4.ip_nonlocal_bind
 # Should return: net.ipv4.ip_nonlocal_bind = 1
+
+# Manually check if VIP can be assigned:
+docker exec ha-lb ip addr add 192.168.1.100/24 dev eth0
+# If this fails: wrong interface name or IP already in use
+
+# Remove it:
+docker exec ha-lb ip addr del 192.168.1.100/24 dev eth0
+```
+
+### Container won't start
+
+```bash
+# Check if network mode is supported:
+docker run --network host --rm alpine ip -br addr
+# Should show your interfaces
+
+# Check capabilities:
+docker run --rm --privileged alpine cat /proc/self/status | grep Cap
+
+# Validate the image architecture:
+docker image inspect ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest | grep -A5 "Architecture"
 ```
 
 ### VIP flapping (frequent failover)
 
-- Increase `advert_int` in keepalived (default 1s)
-- Check for network issues — VRRP multicast must reach all nodes
-- Ensure `VRRP_VRID` is unique on your network (conflicts cause chaos)
-- Check auth password matches across all nodes
+- Ensure all 3 nodes are on the **same subnet** — VRRP multicast won't cross routers
+- Check for network issues (bad cable, Wi-Fi, switch port errors)
+- Verify `VRRP_VRID` is unique — conflicts cause chaos
+- Ensure `VRRP_AUTH_PASS` matches on all nodes
+- Check keepalived logs: `docker logs ha-lb | grep -i vrrp`
 
 ### HAProxy shows all backends down
 
 ```bash
-# Check if Proxmox nodes are reachable from the VIP-owner
-curl -kv https://192.168.1.10:8006/api2/json
+# Test connectivity from the VIP-owner node:
+docker exec ha-lb curl -kv https://192.168.1.10:8006/api2/json
 
-# Check HAProxy backend status
-curl -s http://localhost:8404/haproxy?stats | grep proxmox
+# Check HAProxy logs:
+docker logs ha-lb | grep -i backend
 
-# Check HAProxy logs
-sudo journalctl -u haproxy --since "5 minutes ago" | grep -i backend
+# Verify backends config:
+docker exec ha-lb cat /etc/haproxy/haproxy.cfg
 ```
 
-### Proxmox console (VM viewer) doesn't work
+### Interface name is different
 
-Proxmox console uses WebSocket connections through port 8006. HAProxy handles these natively — no extra config needed. If consoles fail:
+Find your interface name:
 
 ```bash
-# Check WebSocket passthrough in HAProxy logs
-sudo journalctl -u haproxy | grep -i websocket
-
-# Verify SSL is terminating correctly
-openssl s_client -connect 192.168.1.100:8006 -servername 192.168.1.100
+ip -br addr
+# Output example:
+# lo               UNKNOWN
+# eth0             UP  192.168.1.10/24
+# docker0          DOWN
 ```
 
-### Force VIP failover (testing)
+Set the correct name: `-e VRRP_INTERFACE=eth0` (or `ens3`, `eno1`, etc.)
+
+### Running on x86_64 (not Raspberry Pi)
+
+Same setup works. The image supports both `linux/arm64` and `linux/amd64`:
 
 ```bash
-# On the current VIP owner, stop HAProxy to trigger priority downgrade:
-sudo systemctl stop haproxy
-# Wait ~4 seconds — VIP should float to the next node
+# Pull (multi-arch image auto-selects based on host):
+docker pull ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
 
-# Restore:
-sudo systemctl start haproxy
-# With preempt, VIP returns to highest-priority node
+# Or build for a specific architecture from another machine:
+docker buildx build --platform linux/arm64 -t ha-lb:latest .
+docker save ha-lb:latest | gzip > ha-lb-arm64.tar.gz
+# Transfer to Pi and:
+docker load < ha-lb-arm64.tar.gz
 ```
 
-### Reset VIP ownership
+## Security
 
-```bash
-# On the node that should become primary:
-sudo systemctl restart keepalived
-```
-
-## Security Notes
-
-1. **Change the VRRP auth password** — edit `auth_pass` in `keepalived.conf.template`
-2. **Consider firewall rules** — restrict VRRP multicast (protocol 112) to trusted nodes:
-   ```bash
-   # iptables example: only allow VRRP from cluster nodes
-   iptables -A INPUT -p 112 -s 192.168.1.10/32 -j ACCEPT
-   iptables -A INPUT -p 112 -s 192.168.1.11/32 -j ACCEPT
-   iptables -A INPUT -p 112 -s 192.168.1.12/32 -j ACCEPT
-   iptables -A INPUT -p 112 -j DROP
+1. **Change `VRRP_AUTH_PASS`** — default `CHANGE_ME_PASSWORD` must be updated
+2. **Restrict the stats page** — add to `docker-compose.yml`:
+   ```yaml
+   environment:
+     - STATS_AUTH=admin:your-secure-password
    ```
-3. **Stats endpoint** — the HAProxy stats page (`:8404`) should be firewalled to your admin network
-4. **Proxmox user** — consider creating a dedicated read-only API user for health checks
+3. **Use a firewall** — restrict VRRP multicast (protocol 112) to trusted nodes:
+   ```bash
+   iptables -A INPUT -p vrrp -s 192.168.1.0/24 -j ACCEPT
+   iptables -A INPUT -p vrrp -j DROP
+   ```
+4. **Replace the self-signed cert** — mount your own:
+   ```yaml
+   volumes:
+     - ./certs/proxmox.pem:/etc/haproxy/certs/proxmox.pem:ro
+   ```
 
-## Alternative: Nginx Instead of HAProxy
+## Cleanup
 
-This project uses HAProxy because it has native active health checks and keepalived integration. If you prefer nginx:
+```bash
+# Stop and remove all containers:
+docker compose down
 
-- Use `nginx` with `proxy_pass` to the backends
-- Health checks must be passive (nginx only marks servers down after connection failures)
-- Use the `ngx_http_lua_upstream` module or `nginx-plus` for active health checks
-- VIP failover still works the same with keepalived (just remove the `chk_haproxy` track script)
+# Remove volumes and images:
+docker compose down -v --rmi local
+```
+
+## Files
+
+```
+Dockerfile                 # Docker image (Alpine, ARM64 + amd64)
+docker-compose.yml         # 3-node cluster example
+entrypoint.sh              # Config generation + service startup
+ha-check-haproxy.sh        # Keepalived health check script
+config.sh                  # Shared config — identical on all nodes
+node.conf.template         # Node-specific config template
+keepalived.conf.template   # Keepalived VRRP config template
+haproxy.cfg.template       # HAProxy load balancer config template
+samples/
+  backends.conf.sample     # Backend server list template
+```
 
 ## License
 
