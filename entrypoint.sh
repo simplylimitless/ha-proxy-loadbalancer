@@ -159,8 +159,8 @@ chmod 600 /etc/keepalived/keepalived.conf
 echo "Generating /etc/haproxy/haproxy.cfg ..."
 cat > /etc/haproxy/haproxy.cfg << EOF
 global
-    log stdout format raw length 0 local0
-    log stdout format raw length 0 local1 notice
+    log stdout format raw local0
+    log stdout format raw local1 notice
     stats socket /run/haproxy/admin.sock mode 660 level admin
     stats timeout 30s
     user haproxy
@@ -194,19 +194,18 @@ listen stats
     stats admin if LOCALHOST
 
 frontend backend_https
-    bind *:8006 ssl crt /etc/haproxy/certs/backend.pem
+    bind *:443 ssl crt /etc/haproxy/certs/backend.pem
     default_backend backend_nodes
 
 frontend backend_http
-    bind *:8007
+    bind *:80
     http-request redirect scheme https code 301
 
 backend backend_nodes
     balance roundrobin
     option httpchk GET /
     http-check expect status 200,401
-    default-server ssl verify none ca-file none
-    inter ${HC_INTERVAL} rise 2 fall 3
+    default-server ssl verify none
 
 ${SERVERS}
 EOF
@@ -218,8 +217,8 @@ echo "=== Configuration generated ==="
 echo "  VIP:             ${VIP_ADDRESS}/${VIP_SUBNET} on ${VRRP_INTERFACE}"
 echo "  VRRP:            state=${INITIAL_STATE} priority=${NODE_PRIORITY} VRID=${VRRP_VRID}"
 echo "  Backends:        ${COUNT} node(s)"
-echo "  Frontend:        https://*:8006"
-echo "  HTTP redirect:   *:8007"
+echo "  Frontend:        https://*:443"
+echo "  HTTP redirect:   *:80"
 echo "  Stats:           http://*:8404/haproxy?stats"
 echo ""
 

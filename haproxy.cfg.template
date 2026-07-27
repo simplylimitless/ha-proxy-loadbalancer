@@ -60,7 +60,7 @@ listen stats
 #---------------------------------------------------------------------
 frontend backend_https
     # Listen on all interfaces (the VIP is assigned locally by keepalived)
-    bind *:8006 ssl crt /etc/haproxy/certs/backend.pem
+    bind *:443 ssl crt /etc/haproxy/certs/backend.pem
 
     # Default to HTTPS redirect for non-HTTPS clients
     http-request redirect scheme https unless { ssl_fc }
@@ -72,7 +72,7 @@ frontend backend_https
 # Frontend: also accept plain HTTP (redirect to HTTPS)
 #---------------------------------------------------------------------
 frontend backend_http
-    bind *:8007
+    bind *:80
     http-request redirect scheme https code 301
 
 #---------------------------------------------------------------------

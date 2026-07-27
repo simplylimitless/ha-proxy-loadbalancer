@@ -11,6 +11,7 @@ FROM alpine:3.20
 # - openssl:    generate self-signed cert for HAProxy frontend
 # - iproute2:   ip/ss for network diagnostics (debugging)
 RUN apk add --no-cache \
+    bash \
     keepalived \
     haproxy \
     socat \
@@ -31,8 +32,8 @@ COPY ha-check-haproxy.sh /usr/local/bin/ha-check-haproxy.sh
 
 RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/ha-check-haproxy.sh
 
-# Ports — HAProxy frontend (8006), HTTP redirect (8007), stats (8404)
-EXPOSE 8006 8007 8404
+# Ports — HTTPS frontend (443), HTTP redirect (80), stats (8404)
+EXPOSE 80 443 8404
 
 # Health check: is the VIP-responsive? (skip during build)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \

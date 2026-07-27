@@ -144,8 +144,8 @@ When HAProxy crashes:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| `8006` | HTTPS | VIP frontend (TLS terminated) |
-| `8007` | HTTP | HTTP → HTTPS redirect |
+| `443` | HTTPS | VIP frontend (TLS terminated) |
+| `80` | HTTP | HTTP → HTTPS redirect |
 | `8404` | HTTP | HAProxy stats page |
 
 ### Backends File (Alternative to Env Var)
@@ -180,7 +180,7 @@ docker logs ha-lb
 curl -s http://192.168.1.10:8404/haproxy?stats
 
 # Test the floating VIP:
-curl -k https://192.168.1.100:8006
+curl -k https://192.168.1.100/
 
 # Check all container status:
 docker ps --filter "name=ha-lb"

@@ -171,7 +171,8 @@ assert_contains "$CONTENT" "COPY entrypoint.sh" "entrypoint copy"
 assert_contains "$CONTENT" "COPY ha-check-haproxy.sh" "check script copy"
 assert_contains "$CONTENT" "ENTRYPOINT" "entrypoint instruction"
 assert_contains "$CONTENT" "CMD" "cmd instruction"
-assert_contains "$CONTENT" "EXPOSE 8006" "port 8006 exposed"
+assert_contains "$CONTENT" "EXPOSE" "ports exposed"
+assert_contains "$CONTENT" "443" "port 443 exposed"
 assert_contains "$CONTENT" "8404" "port 8404 exposed"
 }
 

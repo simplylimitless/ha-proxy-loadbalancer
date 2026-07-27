@@ -187,11 +187,11 @@ listen stats
     stats refresh 10s
 
 frontend backend_https
-    bind *:8006 ssl crt /etc/haproxy/certs/backend.pem
+    bind *:443 ssl crt /etc/haproxy/certs/backend.pem
     default_backend backend_nodes
 
 frontend backend_http
-    bind *:8007
+    bind *:80
     http-request redirect scheme https code 301
 
 backend backend_nodes
@@ -206,8 +206,8 @@ backend backend_nodes
 CONF
 
 assert_file_contains "$HAPROXY_CONF" "mode http" "mode http"
-assert_file_contains "$HAPROXY_CONF" "bind *:8006" "HTTPS frontend bind"
-assert_file_contains "$HAPROXY_CONF" "bind *:8007" "HTTP redirect bind"
+assert_file_contains "$HAPROXY_CONF" "bind *:443" "HTTPS frontend bind"
+assert_file_contains "$HAPROXY_CONF" "bind *:80" "HTTP redirect bind"
 assert_file_contains "$HAPROXY_CONF" "bind *:8404" "stats bind"
 assert_file_contains "$HAPROXY_CONF" "stats uri /haproxy?stats" "stats URI"
 assert_file_contains "$HAPROXY_CONF" "option httpchk GET /" "health check"
