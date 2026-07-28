@@ -139,6 +139,7 @@ When HAProxy crashes:
 |------------|---------|---------|
 | `/etc/haproxy-lb/backends.conf` | Backend server list (file overrides `BACKENDS_LIST` env var) | See `samples/backends.conf.sample` |
 | `/etc/haproxy/certs/backend.pem` | TLS certificate (auto-generated if missing) | Mount your own as `./certs/backend.pem` |
+| `/etc/letsencrypt` | Host's certbot directory, mounted read-only as-is | `-v /etc/letsencrypt:/etc/letsencrypt:ro` + `-e LETSENCRYPT_DOMAINS=example.com` |
 
 ### Ports
 
@@ -167,14 +168,47 @@ Create `backends.conf`:
 
 The mounted file takes precedence over the env var.
 
+### Let's Encrypt Certificates
+
+Mount your host's certbot directory read-only, as-is — no reformatting needed:
+
+```yaml
+volumes:
+  - /etc/letsencrypt:/etc/letsencrypt:ro
+environment:
+  LETSENCRYPT_DOMAINS: example.com   # certbot live-dir name(s), comma-separated
+```
+
+HAProxy needs cert+key in a single file, so `entrypoint.sh` combines
+`fullchain.pem` + `privkey.pem` from `/etc/letsencrypt/live/<domain>/` into
+`/etc/haproxy/certs/<domain>.pem` on every container start — renewals on the
+host are picked up automatically on restart.
+
+A single **wildcard cert** (e.g. a `*.example.com` cert under certbot live-dir
+`example.com`) answers for every subdomain, so one `LETSENCRYPT_DOMAINS` entry
+is usually enough even when load-balancing multiple vhosts — see
+[Multiple Vhosts (SNI)](#multiple-vhosts-sni) below.
+
 ## Multiple Vhosts (SNI)
 
 When you need to load-balance multiple services (e.g. Proxmox + GitLab + Jenkins) through a single VIP, use **SNI (Server Name Indication)** — HAProxy routes based on the domain name in the TLS handshake.
 
 ### Setup
 
+If a single wildcard cert covers all your vhosts (e.g. `*.example.com` for
+`proxmox.example.com` + `git.example.com` + `jenkins.example.com`), mount
+Let's Encrypt directly and skip per-domain cert files entirely — see
+[Let's Encrypt Certificates](#lets-encrypt-certificates). Reference the one
+combined cert in your custom `haproxy.cfg`'s bind line:
+
+```
+bind *:443 ssl crt /etc/haproxy/certs/example.com.pem
+```
+
+Only if your vhosts use *different* certs (no shared wildcard) do you need
+per-domain cert files matched by filename:
+
 ```bash
-# 1. Generate or mount certificates
 mkdir -p /etc/haproxy/certs
 
 # Self-signed example:
@@ -185,7 +219,7 @@ mkdir -p /etc/haproxy/certs
 ```
 
 ```bash
-# 2. Run with BACKENDS_LIST pointing to your first service
+# Run with BACKENDS_LIST pointing to your first service
 docker run -d \
   --name ha-lb \
   --network host \
@@ -219,24 +253,34 @@ docker run -d \
   -e VRRP_AUTH_PASS=my-secret \
   -v ./haproxy-sni.cfg:/etc/haproxy/haproxy.cfg:ro \
   -v ./certs:/etc/haproxy/certs \
+  -v /etc/letsencrypt:/etc/letsencrypt:ro \
+  -e LETSENCRYPT_DOMAINS=example.com \
   ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
 ```
+
+`entrypoint.sh` detects the mounted config is read-only and skips its own
+generation, so your custom `haproxy.cfg` is used as-is — it still combines
+any `LETSENCRYPT_DOMAINS` certs into `/etc/haproxy/certs/` first, so your
+config's `bind` line can reference them.
 
 See `samples/haproxy-sni.cfg` for a complete multi-vhost example with Proxmox, GitLab, and Jenkins backends.
 
 ### How SNI works in HAProxy
+
+With a shared wildcard cert, TLS termination doesn't depend on SNI at all —
+one `bind *:443 ssl crt /etc/haproxy/certs/example.com.pem` line serves every
+hostname. SNI only decides *backend routing*:
 
 ```
 Client requests https://git.example.com
            ↓
     HAProxy reads SNI header
            ↓
-    Finds certs/git.example.com.pem
-           ↓
-    Serves that cert + routes to git_nodes backend
+    ACL matches "git.example.com" → routes to git_nodes backend
 ```
 
-Each `.pem` file in `/etc/haproxy/certs/` is matched by domain name:
+Without a shared wildcard, each `.pem` file in `/etc/haproxy/certs/` can
+instead be matched by domain name for cert selection too:
 
 | Cert File | HAProxy Serves When |
 |-----------|-------------------|
@@ -373,7 +417,9 @@ docker load < ha-lb-arm64.tar.gz
    iptables -A INPUT -p vrrp -s 192.168.1.0/24 -j ACCEPT
    iptables -A INPUT -p vrrp -j DROP
    ```
-4. **Replace the self-signed cert** — mount your own:
+4. **Replace the self-signed cert** — use a real one via
+   [Let's Encrypt Certificates](#lets-encrypt-certificates), or mount a
+   pre-combined pem directly:
    ```yaml
    volumes:
      - ./certs/backend.pem:/etc/haproxy/certs/backend.pem:ro

@@ -1,2 +1,3 @@
 # Generated configs (deployed per-node, not committed)
 node.conf
+haproxy-sni-local.cfg

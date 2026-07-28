@@ -8,3 +8,5 @@ node.conf
 !backends.conf.sample
 !haproxy-sni.cfg
 !generate-sni-certs.sh
+*.local.cfg
+*.local

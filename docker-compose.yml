@@ -27,10 +27,17 @@ services:
         192.168.1.10:80,
         192.168.1.11:80,
         192.168.1.12:80
+      # Optional: Let's Encrypt wildcard cert (uncomment + mount below).
+      # Value = the certbot live-dir name, e.g. "example.com" for a
+      # *.example.com cert. Combined into /etc/haproxy/certs/<name>.pem
+      # automatically on every start, so renewals are picked up on restart.
+      # LETSENCRYPT_DOMAINS: example.com
 
     volumes:
       # Persistent socket dir for HAProxy admin
       - lb-state:/run/haproxy
+      # Mount your host's certbot directory as-is — no reformatting needed.
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
 
     # Sysctl: allow VIP binding before routing is ready
     sysctls:
