@@ -97,50 +97,55 @@ fi
 echo "Configured with ${COUNT} backend(s): ${BACKENDS_LIST}"
 
 # --- Certificates ---
-# Let's Encrypt: mount the host's certbot dir read-only at /etc/letsencrypt and
-# set LETSENCRYPT_DOMAINS to the certbot live-dir name(s) (comma-separated).
-# HAProxy needs cert+key in one file, so each domain's fullchain.pem+privkey.pem
-# is (re)combined into /etc/haproxy/certs/<domain>.pem on every start — this
-# picks up renewals automatically on container restart. A single wildcard cert
-# (e.g. live dir "example.com" for a *.example.com cert) covers every subdomain,
-# so no per-domain cert/SNI matching is needed — just reference that one file.
+# Let's Encrypt: mount the host's certbot dir read-only at /etc/letsencrypt.
+# Every domain found under ${LETSENCRYPT_DIR}/live/ is auto-discovered — no
+# domain list needs to be configured. HAProxy needs cert+key in one file, so
+# each domain's fullchain.pem+privkey.pem is (re)combined into
+# /etc/haproxy/certs/<domain>.pem on every start — this picks up renewals
+# automatically on container restart. HAProxy is then pointed at the whole
+# certs directory and picks the right cert per-connection using the TLS SNI
+# hostname, so any number of domains "just work" off one mount.
 LETSENCRYPT_DIR="${LETSENCRYPT_DIR:-/etc/letsencrypt}"
-LETSENCRYPT_DOMAINS="${LETSENCRYPT_DOMAINS:-}"
 
 mkdir -p /etc/haproxy/certs
 CERT_FILE="/etc/haproxy/certs/backend.pem"
+SSL_CRT_ARG=""
 
-if [ -n "$LETSENCRYPT_DOMAINS" ]; then
-    FIRST_DOMAIN=""
-    IFS=',' read -ra LE_DOMAINS <<< "$LETSENCRYPT_DOMAINS"
-    for domain in "${LE_DOMAINS[@]}"; do
-        domain="$(echo "$domain" | xargs)"
-        [ -z "$domain" ] && continue
-        [ -z "$FIRST_DOMAIN" ] && FIRST_DOMAIN="$domain"
+LETSENCRYPT_LIVE_DIR="${LETSENCRYPT_DIR}/live"
+if [ -d "$LETSENCRYPT_LIVE_DIR" ]; then
+    for LIVE_DIR in "$LETSENCRYPT_LIVE_DIR"/*/; do
+        [ -d "$LIVE_DIR" ] || continue
+        domain="$(basename "$LIVE_DIR")"
+        # certbot also drops a README file (not a dir) in the live/ folder — skip it
+        [ "$domain" = "README" ] && continue
 
-        LIVE_DIR="${LETSENCRYPT_DIR}/live/${domain}"
-        if [ -f "${LIVE_DIR}/fullchain.pem" ] && [ -f "${LIVE_DIR}/privkey.pem" ]; then
-            cat "${LIVE_DIR}/fullchain.pem" "${LIVE_DIR}/privkey.pem" > "/etc/haproxy/certs/${domain}.pem"
+        if [ -f "${LIVE_DIR}fullchain.pem" ] && [ -f "${LIVE_DIR}privkey.pem" ]; then
+            cat "${LIVE_DIR}fullchain.pem" "${LIVE_DIR}privkey.pem" > "/etc/haproxy/certs/${domain}.pem"
             chmod 600 "/etc/haproxy/certs/${domain}.pem"
             echo "Combined Let's Encrypt cert for ${domain} -> /etc/haproxy/certs/${domain}.pem"
+            SSL_CRT_ARG="/etc/haproxy/certs/"
         else
             echo "WARNING: No Let's Encrypt cert found at ${LIVE_DIR} (expected fullchain.pem + privkey.pem)" >&2
         fi
     done
-    CERT_FILE="/etc/haproxy/certs/${FIRST_DOMAIN}.pem"
 fi
 
-if [ ! -f "$CERT_FILE" ]; then
-    echo "Generating self-signed certificate for HAProxy frontend..."
-    openssl req -x509 -nodes -newkey rsa:2048 \
-        -keyout /tmp/haproxy-key.pem -out /tmp/haproxy-cert.pem \
-        -days 365 \
-        -subj "/CN=${VIP_ADDRESS}" 2>/dev/null
-    cat /tmp/haproxy-cert.pem /tmp/haproxy-key.pem > "$CERT_FILE"
-    rm -f /tmp/haproxy-key.pem /tmp/haproxy-cert.pem
-    chmod 600 "$CERT_FILE"
+if [ -z "$SSL_CRT_ARG" ]; then
+    if [ ! -f "$CERT_FILE" ]; then
+        echo "Generating self-signed certificate for HAProxy frontend..."
+        openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout /tmp/haproxy-key.pem -out /tmp/haproxy-cert.pem \
+            -days 365 \
+            -subj "/CN=${VIP_ADDRESS}" 2>/dev/null
+        cat /tmp/haproxy-cert.pem /tmp/haproxy-key.pem > "$CERT_FILE"
+        rm -f /tmp/haproxy-key.pem /tmp/haproxy-cert.pem
+        chmod 600 "$CERT_FILE"
+    else
+        echo "Using certificate: ${CERT_FILE}"
+    fi
+    SSL_CRT_ARG="$CERT_FILE"
 else
-    echo "Using certificate: ${CERT_FILE}"
+    echo "Using Let's Encrypt certs from: /etc/haproxy/certs/ (SNI auto-select)"
 fi
 
 # --- Generate keepalived.conf ---
@@ -232,7 +237,7 @@ listen stats
     stats admin if LOCALHOST
 
 frontend backend_https
-    bind *:443 ssl crt ${CERT_FILE}
+    bind *:443 ssl crt ${SSL_CRT_ARG}
     default_backend backend_nodes
 
 frontend backend_http

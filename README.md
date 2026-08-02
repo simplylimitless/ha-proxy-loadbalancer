@@ -139,7 +139,7 @@ When HAProxy crashes:
 |------------|---------|---------|
 | `/etc/haproxy-lb/backends.conf` | Backend server list (file overrides `BACKENDS_LIST` env var) | See `samples/backends.conf.sample` |
 | `/etc/haproxy/certs/backend.pem` | TLS certificate (auto-generated if missing) | Mount your own as `./certs/backend.pem` |
-| `/etc/letsencrypt` | Host's certbot directory, mounted read-only as-is | `-v /etc/letsencrypt:/etc/letsencrypt:ro` + `-e LETSENCRYPT_DOMAINS=example.com` |
+| `/etc/letsencrypt` | Host's certbot directory, mounted read-only as-is — every domain under it is auto-discovered | `-v /etc/letsencrypt:/etc/letsencrypt:ro` |
 
 ### Ports
 
@@ -170,23 +170,21 @@ The mounted file takes precedence over the env var.
 
 ### Let's Encrypt Certificates
 
-Mount your host's certbot directory read-only, as-is — no reformatting needed:
+Mount your host's certbot directory read-only, as-is — no reformatting and no
+domain list needed:
 
 ```yaml
 volumes:
   - /etc/letsencrypt:/etc/letsencrypt:ro
-environment:
-  LETSENCRYPT_DOMAINS: example.com   # certbot live-dir name(s), comma-separated
 ```
 
-HAProxy needs cert+key in a single file, so `entrypoint.sh` combines
-`fullchain.pem` + `privkey.pem` from `/etc/letsencrypt/live/<domain>/` into
-`/etc/haproxy/certs/<domain>.pem` on every container start — renewals on the
-host are picked up automatically on restart.
-
-A single **wildcard cert** (e.g. a `*.example.com` cert under certbot live-dir
-`example.com`) answers for every subdomain, so one `LETSENCRYPT_DOMAINS` entry
-is usually enough even when load-balancing multiple vhosts — see
+HAProxy needs cert+key in a single file, so `entrypoint.sh` auto-discovers
+every domain under `/etc/letsencrypt/live/` and combines each domain's
+`fullchain.pem` + `privkey.pem` into `/etc/haproxy/certs/<domain>.pem` on
+every container start — renewals on the host are picked up automatically on
+restart. HAProxy then binds the whole `/etc/haproxy/certs/` directory and
+picks the right cert per connection using the TLS SNI hostname, so any number
+of domains (or vhosts) work automatically off this one mount — see
 [Multiple Vhosts (SNI)](#multiple-vhosts-sni) below.
 
 ## Multiple Vhosts (SNI)
@@ -195,18 +193,15 @@ When you need to load-balance multiple services (e.g. Proxmox + GitLab + Jenkins
 
 ### Setup
 
-If a single wildcard cert covers all your vhosts (e.g. `*.example.com` for
-`proxmox.example.com` + `git.example.com` + `jenkins.example.com`), mount
-Let's Encrypt directly and skip per-domain cert files entirely — see
-[Let's Encrypt Certificates](#lets-encrypt-certificates). Reference the one
-combined cert in your custom `haproxy.cfg`'s bind line:
+Just mounting Let's Encrypt (see [Let's Encrypt Certificates](#lets-encrypt-certificates))
+already gets you TLS termination for every discovered domain via SNI, all
+routed to the same backend pool — no custom config needed for that case.
 
-```
-bind *:443 ssl crt /etc/haproxy/certs/example.com.pem
-```
-
-Only if your vhosts use *different* certs (no shared wildcard) do you need
-per-domain cert files matched by filename:
+You only need a custom `haproxy.cfg` (below) when different vhosts must route
+to *different* backend pools (e.g. `proxmox.example.com` → Proxmox nodes,
+`git.example.com` → GitLab nodes). If you don't use Let's Encrypt, or your
+vhosts use certs outside the standard certbot layout, you can also drop
+pre-combined `.pem` files straight into `/etc/haproxy/certs/` yourself:
 
 ```bash
 mkdir -p /etc/haproxy/certs
@@ -254,14 +249,13 @@ docker run -d \
   -v ./haproxy-sni.cfg:/etc/haproxy/haproxy.cfg:ro \
   -v ./certs:/etc/haproxy/certs \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
-  -e LETSENCRYPT_DOMAINS=example.com \
   ghcr.io/simplylimitless/ha-proxy-loadbalancer:latest
 ```
 
 `entrypoint.sh` detects the mounted config is read-only and skips its own
-generation, so your custom `haproxy.cfg` is used as-is — it still combines
-any `LETSENCRYPT_DOMAINS` certs into `/etc/haproxy/certs/` first, so your
-config's `bind` line can reference them.
+generation, so your custom `haproxy.cfg` is used as-is — it still
+auto-discovers and combines any Let's Encrypt certs into
+`/etc/haproxy/certs/` first, so your config's `bind` line can reference them.
 
 See `samples/haproxy-sni.cfg` for a complete multi-vhost example with Proxmox, GitLab, and Jenkins backends.
 
